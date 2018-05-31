@@ -7,14 +7,17 @@ import warnings
 from functools import partial
 
 import six
+from cryptography.hazmat.primitives import hashes
 from mock import sentinel
 from six.moves.urllib.parse import parse_qs, parse_qsl, urlparse
 from testfixtures import LogCapture, ShouldWarn, StringComparison
 
 from openid import association, cryptutil, oidutil
 from openid.consumer.consumer import DiffieHellmanSHA256ConsumerSession
+from openid.dh import DiffieHellman
 from openid.message import IDENTIFIER_SELECT, OPENID1_NS, OPENID1_URL_LIMIT, OPENID2_NS, OPENID_NS, Message, no_default
 from openid.server import server
+from openid.server.server import DiffieHellmanSHA1ServerSession
 from openid.store import memstore
 
 # In general, if you edit or add tests here, try to move in the direction
@@ -1279,6 +1282,24 @@ class TestCheckAuth(unittest.TestCase):
         self.assertEqual(r.fields.getArgs(OPENID_NS), {'is_valid': 'true'})
 
 
+class TestDiffieHellmanSHA1ServerSession(unittest.TestCase):
+    """Unittests of `DiffieHellmanSHA1ServerSession` class."""
+
+    def test_custom_hash_func(self):
+        def zero_hash(value):
+            return b'\x00' * 20
+
+        class ZeroHashServerSession(DiffieHellmanSHA1ServerSession):
+            hash_func = staticmethod(zero_hash)
+
+        server_dh = DiffieHellman.fromDefaults()
+        consumer_dh = DiffieHellman.fromDefaults()
+
+        server_session = ZeroHashServerSession(server_dh, cryptutil.base64ToLong(consumer_dh.public_key))
+        result = {'dh_server_public': server_dh.public_key, 'enc_mac_key': oidutil.toBase64(b'Rimmer is smeg head!')}
+        self.assertEqual(server_session.answer(b'Rimmer is smeg head!'), result)
+
+
 class TestAssociate(unittest.TestCase):
     # TODO: test DH with non-default values for modulus and gen.
     # (important to do because we actually had it broken for a while.)
@@ -1291,8 +1312,6 @@ class TestAssociate(unittest.TestCase):
 
     def test_dhSHA1(self):
         self.assoc = self.signatory.createAssociation(dumb=False, assoc_type='HMAC-SHA1')
-        from openid.dh import DiffieHellman
-        from openid.server.server import DiffieHellmanSHA1ServerSession
         consumer_dh = DiffieHellman.fromDefaults()
         cpub = cryptutil.base64ToLong(consumer_dh.public_key)
         server_dh = DiffieHellman.fromDefaults()
@@ -1310,7 +1329,7 @@ class TestAssociate(unittest.TestCase):
 
         enc_key = oidutil.fromBase64(rfg("enc_mac_key"))
         spub = cryptutil.base64ToLong(rfg("dh_server_public"))
-        secret = consumer_dh.xorSecret(spub, enc_key, cryptutil.sha1)
+        secret = consumer_dh.xor_secret(spub, enc_key, hashes.SHA1())
         self.assertEqual(secret, self.assoc.secret)
 
     def test_dhSHA256(self):
@@ -1335,7 +1354,7 @@ class TestAssociate(unittest.TestCase):
 
         enc_key = oidutil.fromBase64(rfg("enc_mac_key"))
         spub = cryptutil.base64ToLong(rfg("dh_server_public"))
-        secret = consumer_dh.xorSecret(spub, enc_key, cryptutil.sha256)
+        secret = consumer_dh.xor_secret(spub, enc_key, hashes.SHA256())
         self.assertEqual(secret, self.assoc.secret)
 
     def test_protoError256(self):
