@@ -3,11 +3,12 @@ from __future__ import unicode_literals
 import os
 import time
 import unittest
+import warnings
 from functools import partial
 
 import six
 from six.moves.urllib.parse import parse_qsl, urlparse
-from testfixtures import LogCapture, StringComparison
+from testfixtures import LogCapture, ShouldWarn, StringComparison
 
 from openid import association, cryptutil, fetchers, kvform, oidutil
 from openid.consumer.consumer import (CANCEL, FAILURE, SETUP_NEEDED, SUCCESS, AuthRequest, CancelResponse, Consumer,
@@ -1855,7 +1856,13 @@ class TestDiffieHellmanSHA1ConsumerSession(unittest.TestCase):
         msg.setArg(OPENID_NS, 'enc_mac_key', oidutil.toBase64(b'Rimmer is smeg head!'))
 
         consumer_session = ZeroHashConsumerSession(consumer_dh)
-        self.assertEqual(consumer_session.extractSecret(msg), b'Rimmer is smeg head!')
+        with ShouldWarn() as captured:
+            warnings.simplefilter('always')
+            self.assertEqual(consumer_session.extractSecret(msg), b'Rimmer is smeg head!')
+        # There are 2 warnings, we need to check only one.
+        self.assertIsInstance(captured[0].message, DeprecationWarning)
+        self.assertEqual(six.text_type(captured[0].message),
+                         "Attribute hash_func is deprecated, use algorithm instead.")
 
 
 class TestNoStore(unittest.TestCase):

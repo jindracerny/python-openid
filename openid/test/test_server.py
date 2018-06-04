@@ -1297,7 +1297,13 @@ class TestDiffieHellmanSHA1ServerSession(unittest.TestCase):
 
         server_session = ZeroHashServerSession(server_dh, cryptutil.base64ToLong(consumer_dh.public_key))
         result = {'dh_server_public': server_dh.public_key, 'enc_mac_key': oidutil.toBase64(b'Rimmer is smeg head!')}
-        self.assertEqual(server_session.answer(b'Rimmer is smeg head!'), result)
+        with ShouldWarn() as captured:
+            warnings.simplefilter('always')
+            self.assertEqual(server_session.answer(b'Rimmer is smeg head!'), result)
+        # There are 2 warnings, we need to check only one.
+        self.assertIsInstance(captured[0].message, DeprecationWarning)
+        self.assertEqual(six.text_type(captured[0].message),
+                         "Attribute hash_func is deprecated, use algorithm instead.")
 
 
 class TestAssociate(unittest.TestCase):
